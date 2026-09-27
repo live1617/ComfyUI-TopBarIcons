@@ -1,0 +1,28 @@
+# ComfyUI Registry 元数据规范：https://docs.comfy.org/registry/specifications
+# 上传前务必核对：[project.urls] 的仓库地址 与 [tool.comfy] 的 PublisherId
+
+[project]
+name = "topbar-icons"
+version = "1.0.0"
+description = "顶部图标管理器：自由隐藏 ComfyUI 顶栏上用不到的图标与按钮，支持仅图标模式、紧凑间距"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+# 纯前端插件，无任何 Python 依赖
+dependencies = []
+classifiers = ["Operating System :: OS Independent"]
+
+[project.urls]
+Repository = "https://github.com/live1617/ComfyUI-TopBarIcons"
+Documentation = "https://github.com/live1617/ComfyUI-TopBarIcons#readme"
+"Bug Tracker" = "https://github.com/live1617/ComfyUI-TopBarIcons/issues"
+
+[tool.comfy]
+# 在 https://registry.comfy.org 注册后拿到的发布者 ID，一般等于你的 GitHub 用户名
+PublisherId = "live1617"
+# Registry / Manager 列表里显示的名字
+DisplayName = "ComfyUI-TopBarIcons（顶部图标管理器）"
+# 列表图标（已随包附带 icon.svg / icon.png，400x400）
+# 注意：仓库地址需与 [project.urls] 一致，推送到 GitHub 后此链接才生效
+Icon = "https://raw.githubusercontent.com/live1617/ComfyUI-TopBarIcons/main/icon.png"
+# 可选：横幅图（21:9）
+# Banner = "https://raw.githubusercontent.com/live1617/ComfyUI-TopBarIcons/main/banner.png"
