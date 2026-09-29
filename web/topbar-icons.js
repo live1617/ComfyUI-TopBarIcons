@@ -9,9 +9,10 @@
 import { app } from "../../scripts/app.js";
 
 /* ------------------------------- 常量 ------------------------------------ */
-const VERSION = "1.0.0"; // ← 与 pyproject.toml / __init__.py 保持同步
+const VERSION = "1.1.0"; // ← 与 pyproject.toml / __init__.py 保持同步
 const EXT_NAME = "ComfyUI.TopBarIcons";
 const LS_KEY = "ComfyUI-TopBarIcons.v1";
+const API_URL = "/topbar-icons/config"; // 后端接口（插件目录 config.json）
 const STYLE_ID = "tbim-rules"; // 隐藏规则
 const UISTYLE_ID = "tbim-ui-css"; // 面板样式
 const MARK = "data-tbim"; // 标记我们自己注入的 DOM，扫描时排除
@@ -64,6 +65,12 @@ function emptyState() {
 
 let state = emptyState();
 
+// 配置来源："file"（插件目录 config.json，全浏览器通用）| "local"（仅当前浏览器）
+let storeMode = "local";
+let remoteOK = false;
+let remoteTimer = null;
+let remotePath = null;
+
 function loadState() {
   const fallback = emptyState();
   try {
@@ -78,11 +85,109 @@ function loadState() {
   }
 }
 
+function normalize(obj) {
+  const base = emptyState();
+  if (!obj || typeof obj !== "object") return base;
+  return Object.assign(base, obj, {
+    hidden: obj.hidden && typeof obj.hidden === "object" ? obj.hidden : {},
+  });
+}
+
 function saveState() {
+  // 本地永远写一份影子副本：后端接口不可用时不至于丢配置
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(state));
   } catch (e) {
     /* ignore */
+  }
+  pushRemote();
+}
+
+/* ---- 远程配置（插件目录 config.json）---- */
+function pushRemote() {
+  if (remoteTimer) return; // 防抖：连续改动只写一次
+  remoteTimer = setTimeout(function () {
+    remoteTimer = null;
+    if (typeof fetch !== "function") {
+      remoteOK = false;
+      storeMode = "local";
+      updateStoreTag();
+      return;
+    }
+    fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        remoteOK = true;
+        storeMode = "file";
+        if (d && d.path) remotePath = d.path;
+        updateStoreTag();
+      })
+      .catch(function () {
+        remoteOK = false;
+        storeMode = "local";
+        updateStoreTag();
+      });
+  }, 250);
+}
+
+function loadRemote() {
+  if (typeof fetch !== "function") {
+    storeMode = "local";
+    return Promise.resolve(false);
+  }
+  return fetch(API_URL, { credentials: "same-origin" })
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (d) {
+      remoteOK = true;
+      if (d && d.path) remotePath = d.path;
+      if (d && d.config) {
+        // 服务器文件是权威来源，覆盖本地
+        state = normalize(d.config);
+        storeMode = "file";
+        try {
+          localStorage.setItem(LS_KEY, JSON.stringify(state));
+        } catch (e) {
+          /* ignore */
+        }
+        applyRules();
+        applyIconOnly();
+      } else {
+        // 文件还不存在：把当前（本地）配置上传一份，建立文件
+        storeMode = "file";
+        pushRemote();
+      }
+      updateStoreTag();
+      return true;
+    })
+    .catch(function () {
+      remoteOK = false;
+      storeMode = "local";
+      updateStoreTag();
+      return false;
+    });
+}
+
+function updateStoreTag() {
+  const el = storeTagEl;
+  if (!el) return;
+  if (storeMode === "file") {
+    el.textContent = "配置已保存到插件目录 config.json（换浏览器/换设备同样生效）";
+    el.className = "tbim-store ok";
+    el.title = remotePath || "";
+  } else {
+    el.textContent = "配置仅保存在当前浏览器（后端接口不可用，请重启 ComfyUI 后再试）";
+    el.className = "tbim-store warn";
+    el.title = "";
   }
 }
 
@@ -534,6 +639,7 @@ function isHidden(key) {
 /* ------------------------------- 面板 UI -------------------------------- */
 let panelEl = null;
 let rowBox = null;
+let storeTagEl = null; // 面板底部「配置存储位置」提示
 
 function ensureUIStyle() {
   if (document.getElementById(UISTYLE_ID)) return;
@@ -565,6 +671,9 @@ function ensureUIStyle() {
     ".tbim-empty{padding:20px;text-align:center;font-size:13px;opacity:.6}",
     ".tbim-tip{padding:8px 14px;font-size:11px;opacity:.55;border-top:1px solid rgba(127,127,127,.22)}",
     ".tbim-ver{margin-left:8px;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:.3px;vertical-align:middle;opacity:.75;background:rgba(127,127,127,.22);border:1px solid rgba(127,127,127,.35)}",
+    ".tbim-store{padding:6px 14px;font-size:11px;line-height:1.5;border-top:1px solid rgba(127,127,127,.22);word-break:break-all}",
+    ".tbim-store.ok{color:#3fb950;opacity:.9}",
+    ".tbim-store.warn{color:#d29922;opacity:.9}",
     ".tbim-gear{width:30px;height:30px;flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(127,127,127,.55);background:rgba(127,127,127,.14);color:var(--input-text,#222);cursor:pointer;opacity:.9;transition:opacity .15s,background .15s;z-index:50}",
     ".tbim-gear:hover{opacity:1;background:rgba(127,127,127,.3)}",
     ".tbim-gear svg{width:18px;height:18px}",
@@ -727,8 +836,15 @@ function buildPanel() {
 
   const tip = document.createElement("div");
   tip.className = "tbim-tip";
-  tip.textContent = "取消勾选即隐藏该图标；改动即时生效并保存在浏览器本地。按 Esc 或点击空白处关闭。";
+  tip.textContent = "取消勾选即隐藏该图标；改动即时生效。按 Esc 或点击空白处关闭。";
   panel.appendChild(tip);
+
+  // 配置存储位置提示（文件 / 仅浏览器）
+  storeTagEl = document.createElement("div");
+  storeTagEl.className = "tbim-store";
+  storeTagEl.setAttribute(MARK, "1");
+  panel.appendChild(storeTagEl);
+  updateStoreTag();
 
   mask.addEventListener("mousedown", function (e) {
     if (e.target === mask) closePanel();
@@ -1276,6 +1392,23 @@ window.TopBarIcons = {
     mountGear(r);
     return gear ? gear.__host || "(unknown)" : null;
   },
+  // 配置来源：file（插件目录 config.json）/ local（仅当前浏览器）
+  store: function () {
+    return storeMode;
+  },
+  // 立即保存一次配置（调试用）
+  save: function () {
+    saveState();
+    return storeMode;
+  },
+  // 重新从插件目录拉取配置
+  reload: function () {
+    return loadRemote().then(function (ok) {
+      scan();
+      if (panelEl && panelEl.style.display !== "none") refreshPanel();
+      return ok;
+    });
+  },
   // 排查「齿轮不见了」用：在控制台执行 TopBarIcons.diag()，把结果贴出来
   diag: function () {
     const root = hostRoot();
@@ -1292,6 +1425,9 @@ window.TopBarIcons = {
     const st = document.getElementById(STYLE_ID);
     return {
       version: VERSION,
+      store: storeMode, // file | local
+      remoteOK: remoteOK,
+      configPath: remotePath,
       mode: document.querySelector(SCOPES[0].sel) ? "new-topbar" : "legacy-fallback",
       rootFound: !!root,
       root: root ? describeEl(root) : null,
@@ -1405,3 +1541,10 @@ console.log(
 })();
 
 boot(0);
+
+// 启动后拉取插件目录里的配置（config.json），拿到就覆盖本地、并以文件为准
+loadRemote().then(function (ok) {
+  if (!ok) return;
+  scan();
+  if (panelEl && panelEl.style.display !== "none") refreshPanel();
+});

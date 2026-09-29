@@ -1,9 +1,9 @@
 # ComfyUI-TopBarIcons —— 顶部图标管理器
 
 顶栏上那些从来用不上的图标（各种扩展塞进来的按钮、云端/订阅按钮、旧脚本注入的按钮……）可以逐个关掉了。
-纯前端插件，不注册任何节点，改完立刻生效，配置存在浏览器 localStorage。
+纯前端插件，不注册任何节点，改完立刻生效；**配置保存在插件目录的 `config.json`**，换浏览器、换浏览器配置文件都不用重新设置。
 
-![version](https://img.shields.io/badge/version-1.0.0-blue) ![python](https://img.shields.io/badge/python-%3E%3D3.8-green) ![license](https://img.shields.io/badge/license-MIT-lightgrey)
+![version](https://img.shields.io/badge/version-1.1.0-blue) ![python](https://img.shields.io/badge/python-%3E%3D3.8-green) ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ## 安装
 
@@ -51,7 +51,7 @@ comfy node install topbar-icons
 1. 重启 ComfyUI（首次安装需要，让前端静态目录被挂载），然后 **Ctrl+Shift+R** 强刷页面。
 2. 在顶部工具条最右侧会出现一个 **齿轮按钮** ⇒ 点击打开「顶部工具条图标管理」面板。
 3. 面板里列出了当前所有被扫描到的顶栏元素（按来源分组），**取消勾选即隐藏**，勾选恢复。
-4. 改动即时生效，并保存在本地，下次打开自动生效。
+4. 改动即时生效，并写入插件目录的 `config.json`，下次打开（换浏览器也一样）自动生效。
 
 ### 面板上的其它开关
 
@@ -65,6 +65,25 @@ comfy node install topbar-icons
 | 全部显示 | 清空所有隐藏规则 |
 | 只看到已隐藏 | 只看当前被隐藏的条目 |
 | 导出清单 | 把扫描结果复制出来（排查/反馈用） |
+
+## 配置保存在哪
+
+默认保存在**插件目录的 `config.json`**：
+
+```
+ComfyUI/custom_nodes/ComfyUI-TopBarIcons/config.json
+```
+
+- 换浏览器、换浏览器用户配置、清缓存、用另一台电脑访问同一个 ComfyUI，配置都一样生效。
+- 面板底部会显示当前实际存储来源：
+  - 绿色「配置已保存到插件目录 config.json」——正常走文件；
+  - 黄色「配置仅保存在当前浏览器」——后端接口没起来（**一般是因为装完没重启 ComfyUI**），重启即可。
+- 后端接口不可用时会自动退回浏览器 `localStorage`，功能照常用，只是不跨浏览器。
+- 想彻底重置：删掉 `config.json`（或点面板里的「全部显示」），再刷新页面。
+
+实现上就是两个本地接口（不联网）：`GET /topbar-icons/config` 读、`POST /topbar-icons/config` 写。
+写入会做字段白名单过滤，只保存 `hidden / iconOnly / compact / wide / gearPos / gearVisible`。
+控制台可用 `TopBarIcons.store()` 查当前来源、`TopBarIcons.reload()` 重新从文件拉取。
 
 ## 旧版菜单模式（重要）
 
@@ -90,7 +109,7 @@ comfy node install topbar-icons
 - 打开 ComfyUI 设置面板 ⇒ 左侧 **TopBarIcons** ⇒ **工具条** ⇒ 「打开管理面板」。
 - 或者在同一处点「恢复全部显示」一键还原。
 - 或者在浏览器控制台执行 `TopBarIcons.open()`。
-- 极端情况：清掉 localStorage 的 `ComfyUI-TopBarIcons.v1`。
+- 极端情况：删掉插件目录里的 `config.json`（配置存储首选），并清掉浏览器 localStorage 的 `ComfyUI-TopBarIcons.v1`（回退副本）。
 
 ## 排查
 
@@ -142,6 +161,7 @@ ComfyUI-TopBarIcons/
 ├── web/
 │   └── topbar-icons.js  # 全部逻辑
 ├── icon.svg / icon.png  # Registry 列表图标（400x400）
+├── config.json          # 运行时生成的配置（不进版本库，换浏览器也通用）
 ├── pyproject.toml       # ComfyUI Registry 元数据（PublisherId / Repository 需自行核对）
 ├── LICENSE              # MIT
 └── README.md
@@ -149,15 +169,13 @@ ComfyUI-TopBarIcons/
 
 ## 版本信息
 
-当前版本 **v1.0.0**（与 `pyproject.toml` 的 `[project] version` 一致）。查看方式：
+当前版本 **v1.1.0**（与 `pyproject.toml` 的 `[project] version` 一致）。查看方式：
 
-- 管理面板标题右侧的 `v1.0.0` 小标签；
-- 浏览器控制台启动横幅 `[TopBarIcons] v1.0.0 ...`；
+- 管理面板标题右侧的 `v1.1.0` 小标签；
+- 浏览器控制台启动横幅 `[TopBarIcons] v1.1.0 ...`；
 - 控制台执行 `TopBarIcons.version`，或 `TopBarIcons.diag()` 里的 `version` 字段；
 - ComfyUI 启动日志（Python 侧从 `pyproject.toml` 读取后打印）。
 
-发版时三处要一起改：`pyproject.toml` 的 `version`、`web/topbar-icons.js` 顶部的 `VERSION`、
-`__init__.py` 的 `_FALLBACK_VERSION`（Python 主用 pyproject 的值，回退值保持一致即可）。
 
 ## 兼容性
 

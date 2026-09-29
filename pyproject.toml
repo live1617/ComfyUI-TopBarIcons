@@ -3,7 +3,7 @@
 
 [project]
 name = "topbar-icons"
-version = "1.0.0"
+version = "1.1.0"
 description = "顶部图标管理器：自由隐藏 ComfyUI 顶栏上用不到的图标与按钮，支持仅图标模式、紧凑间距"
 license = { file = "LICENSE" }
 requires-python = ">=3.8"
