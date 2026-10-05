@@ -25,7 +25,7 @@ WEB_DIRECTORY = "./web"
 _HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(_HERE, "config.json")
 
-_FALLBACK_VERSION = "1.1.0"
+_FALLBACK_VERSION = "1.1.1"
 
 # 允许写入 config.json 的字段白名单（防止把任意数据写进磁盘）
 _BOOL_KEYS = ("iconOnly", "compact", "wide", "gearVisible")
@@ -44,6 +44,20 @@ def _read_version():
     return _FALLBACK_VERSION
 
 
+def _clean_exclude(value):
+    """排除规则：只接受字符串数组，去重并限制条数/长度。"""
+    if not isinstance(value, list):
+        return []
+    out = []
+    for item in value[:50]:
+        if not isinstance(item, str):  # 只接受字符串选择器
+            continue
+        s = item.strip()
+        if s and len(s) <= 200 and s not in out:
+            out.append(s)
+    return out
+
+
 def _sanitize(data):
     """只保留白名单字段，避免把任意数据写进磁盘。"""
     if not isinstance(data, dict):
@@ -59,6 +73,7 @@ def _sanitize(data):
         out[b] = bool(data.get(b, False))
     gp = data.get("gearPos", "inner")
     out["gearPos"] = gp if gp in _GEAR_POS else "inner"
+    out["exclude"] = _clean_exclude(data.get("exclude"))
     return out
 
 

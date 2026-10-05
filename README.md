@@ -1,6 +1,6 @@
 # ComfyUI-TopBarIcons (顶部图标管理器)
 
-<p><img src="https://img.shields.io/badge/version-1.1.0-blue" alt="version"> <img src="https://img.shields.io/badge/license-MIT-green" alt="license"> <img src="https://img.shields.io/badge/ComfyUI-custom__node-orange" alt="ComfyUI custom node"></p>
+<p><img src="https://img.shields.io/badge/version-1.1.1-blue" alt="version"> <img src="https://img.shields.io/badge/license-MIT-green" alt="license"> <img src="https://img.shields.io/badge/ComfyUI-custom__node-orange" alt="ComfyUI custom node"></p>
 
 顶栏上那些从来用不上的图标（各种扩展塞进来的按钮、云端/订阅按钮、旧脚本注入的按钮……）可以逐个关掉了。
 **纯前端插件，不注册任何节点**，改完立刻生效；配置保存在插件目录的 `config.json`，换浏览器、换浏览器配置文件都不用重新设置。
@@ -16,6 +16,7 @@
 - **仅看已隐藏**：只看当前被隐藏的条目
 - **重新扫描**：顶栏被 Vue 重建 / 新装了扩展后手动刷一次
 - **导出清单**：把扫描结果复制出来（排查、反馈用）
+- **排除…**：按 CSS 选择器把某些入口排除掉，让它们根本不进列表（见下方「排除规则」）
 - 对话框支持 `Esc` / 点击遮罩关闭
 
 面板顶部还有几个省地方的开关：
@@ -28,7 +29,19 @@
 | 紧凑间距 | 缩小按钮之间的间距和内边距 |
 | 扩展扫描范围 | 额外扫描工作流标签栏（含第三方徽标 badge、公告按钮等） |
 
-面板底部会显示当前配置的存储来源（绿色 = 已存到插件目录，黄色 = 仅当前浏览器）。
+面板底部会显示当前配置的存储来源（绿色 = 已存到插件目录，黄色 = 仅当前浏览器），
+以及被排除规则跳过的入口数量。
+
+## 排除规则（不想被管理的入口）
+
+有些按钮是**别的插件挂到顶栏的固定入口**，不该出现在显隐列表里、也不该被误勾掉。
+这类元素会按排除规则直接跳过：
+
+- **内置规则**（写死在脚本里）：`#pm-topbar-btn`、`.pm-topbar-btn`、`.pm-topbar-pop`、`.pm-topbar-pop-btn`，
+  以及 `[id^="pm-topbar"]` / `[class*="pm-topbar"]`（覆盖同类入口后续改类名的情况）
+- **自定义规则**：面板里点 **排除…**，填 CSS 选择器，多个用英文逗号分隔（留空 = 只用内置规则），
+  随配置一起存进 `config.json`；也可在控制台执行 `TopBarIcons.exclude([".my-btn"])`
+- 被排除的元素不会被隐藏、不会被「仅图标模式」改样式；`TopBarIcons.excluded()` 可查当前命中了哪些
 
 ## 配置保存在哪
 
@@ -43,7 +56,7 @@ ComfyUI/custom_nodes/ComfyUI-TopBarIcons/config.json
 - 想彻底重置：删掉 `config.json`（或点面板里的「全部显示」），再刷新页面
 - 控制台可用 `TopBarIcons.store()` 查当前来源、`TopBarIcons.reload()` 重新从文件拉取
 
-写入只保存白名单字段：`hidden / iconOnly / compact / wide / gearPos / gearVisible`。
+写入只保存白名单字段：`hidden / iconOnly / compact / wide / gearPos / gearVisible / exclude`。
 
 ## 安装
 
@@ -113,9 +126,11 @@ ComfyUI/custom_nodes/ComfyUI-TopBarIcons/
 | `TopBarIcons.save()` | 立即保存一次配置 |
 | `TopBarIcons.reload()` | 重新从 `config.json` 拉取配置 |
 | `TopBarIcons.store()` | 返回 `file`（插件目录）/ `local`（仅当前浏览器） |
+| `TopBarIcons.exclude()` / `.exclude([...])` | 读取 / 设置自定义排除规则（CSS 选择器数组），不传参即读取 |
+| `TopBarIcons.excluded()` | 当前被排除、不参与管理的入口（`{label, rule}` 列表） |
 | `TopBarIcons.state()` / `.items()` | 当前配置 / 扫描到的条目 |
 | `TopBarIcons.version` | 插件版本号 |
-| `TopBarIcons.diag()` | 完整诊断信息（版本、存储来源、顶栏容器、条目数、齿轮位置、隐藏规则） |
+| `TopBarIcons.diag()` | 完整诊断信息（版本、存储来源、顶栏容器、条目数、齿轮位置、隐藏规则、排除规则与被排除入口） |
 
 ## 常见问题
 
@@ -137,7 +152,9 @@ ComfyUI/custom_nodes/ComfyUI-TopBarIcons/
 
 1. 先点面板里的「重新扫描」。
 2. 仍没有就打开「扩展扫描范围」（标签栏上的徽标 / 公告按钮需要它）。
-3. 还是没有就点「导出清单」，把那条元素的 JSON 发给开发者补规则。
+3. 仍没有，检查它是不是被「排除…」里的规则跳过了（面板底部会显示已排除数量，
+   控制台 `TopBarIcons.excluded()` 可看具体命中）。
+4. 还是没有就点「导出清单」，把那条元素的 JSON 发给开发者补规则。
 
 **D. 两个按钮一起被勾选 / 取消**
 
@@ -158,6 +175,9 @@ ComfyUI/custom_nodes/ComfyUI-TopBarIcons/
 「仅图标模式」不依赖任何写死的 testid：扫描时给包裹文字的元素动态打标记再隐藏，
 图标和无障碍朗读文本、角标计数都不受影响。
 
+扫描时会先按排除规则（内置 + 自定义 CSS 选择器）过滤掉不参与管理的入口，被排除的元素既不进列表、
+也不会被隐藏或打标记。
+
 MutationObserver 监听顶栏 DOM 变化自动重扫（节流 250ms，列表内容没变就不重建 DOM，避免闪烁），
 并有 3s 定时兜底；容器被重建时会自动重新挂载齿轮按钮。
 
@@ -177,10 +197,10 @@ ComfyUI-TopBarIcons/
 
 ## 版本信息
 
-当前版本 **v1.1.0**（与 `pyproject.toml` 的 `[project] version` 一致）。查看方式：
+当前版本 **v1.1.1**（与 `pyproject.toml` 的 `[project] version` 一致）。查看方式：
 
-- 管理面板标题右侧的 `v1.1.0` 小标签
-- 浏览器控制台启动横幅 `[TopBarIcons] v1.1.0 ...`
+- 管理面板标题右侧的 `v1.1.1` 小标签
+- 浏览器控制台启动横幅 `[TopBarIcons] v1.1.1 ...`
 - 控制台执行 `TopBarIcons.version`，或 `TopBarIcons.diag()` 里的 `version` 字段
 - ComfyUI 启动日志（Python 侧从 `pyproject.toml` 读取后打印）
 
@@ -191,6 +211,7 @@ ComfyUI-TopBarIcons/
 
 | 版本 | 日期 | 更新内容 |
 | --- | --- | --- |
+| 1.1.1 | 2026-10-05 | 新增排除规则：内置若干规则跳过不参与管理的顶栏入口，面板新增「排除…」可自定义 CSS 选择器；`exclude` 随配置写入 `config.json`；新增 `TopBarIcons.exclude() / excluded()`，`diag()` 带出排除信息 |
 | 1.1.0 | 2026-09-30 | 配置改存插件目录 `config.json`（新增 GET/POST `/topbar-icons/config`），换浏览器/换设备通用；接口不可用时自动退回 localStorage；面板底部显示存储来源，新增 `TopBarIcons.store() / reload() / save()` |
 | 1.0.0 | 2026-09-27 | 首个正式发布版：齿轮入口 + 图标显隐管理面板、按来源分组、仅图标模式 / 紧凑间距、旧版菜单模式降级与齿轮兜底挂载、扫描非 button 控件（如翻译开关） |
 

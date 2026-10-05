@@ -9,7 +9,7 @@
 import { app } from "../../scripts/app.js";
 
 /* ------------------------------- 常量 ------------------------------------ */
-const VERSION = "1.1.0"; // ← 与 pyproject.toml / __init__.py 保持同步
+const VERSION = "1.1.1"; // ← 与 pyproject.toml / __init__.py 保持同步
 const EXT_NAME = "ComfyUI.TopBarIcons";
 const LS_KEY = "ComfyUI-TopBarIcons.v1";
 const API_URL = "/topbar-icons/config"; // 后端接口（插件目录 config.json）
@@ -18,6 +18,18 @@ const UISTYLE_ID = "tbim-ui-css"; // 面板样式
 const MARK = "data-tbim"; // 标记我们自己注入的 DOM，扫描时排除
 const HTXT_CLS = "tbim-htxt"; // 仅图标模式：需要藏起来的文字包裹元素
 const IZO_CLS = "tbim-izo"; // 仅图标模式：文字是直接文本节点的按钮
+
+// 内置排除：别的插件挂到顶栏的固定入口，不参与显隐管理（不会出现在本插件的列表里）。
+// 默认排除别的插件挂到顶栏的固定入口（按选择器匹配，不关心具体是哪个插件）。
+// 想排除更多入口：面板里点「排除…」加 CSS 选择器，会和配置一起存进 config.json。
+const BUILTIN_EXCLUDE = [
+  "#pm-topbar-btn",
+  ".pm-topbar-btn",
+  ".pm-topbar-pop",
+  ".pm-topbar-pop-btn",
+  '[id^="pm-topbar"]',
+  '[class*="pm-topbar"]',
+];
 
 // 扫描范围（新版 Vue 前端 1.16+ / 1.53.x）
 const SCOPES = [
@@ -59,6 +71,7 @@ function emptyState() {
     wide: false,
     gearPos: "inner", // inner | tr | br
     gearVisible: true, // 是否显示齿轮入口
+    exclude: [], // 用户自定义排除规则（CSS 选择器数组）
     version: 1,
   };
 }
@@ -79,10 +92,22 @@ function loadState() {
     const obj = JSON.parse(raw) || {};
     return Object.assign(fallback, obj, {
       hidden: obj.hidden && typeof obj.hidden === "object" ? obj.hidden : {},
+      exclude: cleanExclude(obj.exclude),
     });
   } catch (e) {
     return fallback;
   }
+}
+
+function cleanExclude(v) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  v.forEach(function (s) {
+    if (typeof s !== "string") return;
+    const t = s.trim();
+    if (t && out.indexOf(t) < 0) out.push(t);
+  });
+  return out.slice(0, 50); // 别让配置无限膨胀
 }
 
 function normalize(obj) {
@@ -90,6 +115,7 @@ function normalize(obj) {
   if (!obj || typeof obj !== "object") return base;
   return Object.assign(base, obj, {
     hidden: obj.hidden && typeof obj.hidden === "object" ? obj.hidden : {},
+    exclude: cleanExclude(obj.exclude),
   });
 }
 
@@ -320,6 +346,32 @@ function normalizeBadge(el, root) {
   return el;
 }
 
+/* ------------------------------ 排除规则 -------------------------------- */
+// 生效的排除规则 = 内置规则 + 用户在面板里自定义的选择器
+function excludeSelectors() {
+  const out = BUILTIN_EXCLUDE.slice();
+  cleanExclude(state.exclude).forEach(function (s) {
+    if (out.indexOf(s) < 0) out.push(s);
+  });
+  return out;
+}
+
+// 命中排除规则时返回命中的那条规则（没命中返回 null）
+function excludedBy(el) {
+  const sels = excludeSelectors();
+  for (let i = 0; i < sels.length; i++) {
+    try {
+      if (el.matches && el.matches(sels[i])) return sels[i];
+      if (el.closest && el.closest(sels[i])) return sels[i];
+    } catch (e) {
+      /* 选择器写错就跳过，不该让整个扫描挂掉 */
+    }
+  }
+  return null;
+}
+
+let lastExcluded = []; // 最近一次扫描被排除掉的入口（诊断/面板提示用）
+
 function collectItems(root, excludeSel) {
   // 除了标准可点元素，还要抓「非 button 的开关」：
   // 例如 ComfyUI-Chinese-Translation 的翻译开关是 div[id=toggle-translation-button].tl-toggle-pill，
@@ -336,6 +388,11 @@ function collectItems(root, excludeSel) {
     if (!it || it === root) return;
     if (!it.isConnected) return;
     if (it.closest("[" + MARK + "]")) return; // 我们自己注入的东西
+    const ex = excludedBy(it); // 按排除规则跳过、不参与管理的入口
+    if (ex) {
+      lastExcluded.push({ label: labelOf(it), rule: ex });
+      return;
+    }
     if (excludeSel && it.closest(excludeSel)) return;
     if (uniq.indexOf(it) < 0) uniq.push(it);
   });
@@ -473,6 +530,7 @@ function activeRoots() {
 
 function scan() {
   const list = [];
+  lastExcluded = [];
   activeRoots().forEach(function (entry) {
     const scope = entry.scope;
     const root = entry.root;
@@ -640,6 +698,7 @@ function isHidden(key) {
 let panelEl = null;
 let rowBox = null;
 let storeTagEl = null; // 面板底部「配置存储位置」提示
+let exclTagEl = null; // 面板底部「已排除 N 个入口」提示
 
 function ensureUIStyle() {
   if (document.getElementById(UISTYLE_ID)) return;
@@ -783,6 +842,11 @@ function buildPanel() {
       refreshPanel();
     })
   );
+  tools.appendChild(
+    mkButton("排除…", "按 CSS 选择器排除不想被管理的入口（例如自己写的插件挂的按钮）", function () {
+      editExclude();
+    })
+  );
   panel.appendChild(tools);
 
   // 选项行
@@ -845,6 +909,13 @@ function buildPanel() {
   storeTagEl.setAttribute(MARK, "1");
   panel.appendChild(storeTagEl);
   updateStoreTag();
+
+  // 排除提示：被规则跳过的入口数量
+  exclTagEl = document.createElement("div");
+  exclTagEl.className = "tbim-store";
+  exclTagEl.setAttribute(MARK, "1");
+  panel.appendChild(exclTagEl);
+  updateExcludeTag();
 
   mask.addEventListener("mousedown", function (e) {
     if (e.target === mask) closePanel();
@@ -938,6 +1009,31 @@ function remountGear() {
 
 let onlyHidden = false;
 
+function updateExcludeTag() {
+  if (!exclTagEl) return;
+  const n = lastExcluded.length;
+  const custom = cleanExclude(state.exclude).length;
+  exclTagEl.textContent = n
+    ? "已排除 " + n + " 个入口" + (custom ? "（自定义规则 " + custom + " 条）" : "")
+    : "排除规则 " + excludeSelectors().length + " 条" + (custom ? "（自定义 " + custom + " 条）" : "") + "，当前顶栏无命中";
+}
+
+// 面板里编辑自定义排除规则（英文逗号分隔的 CSS 选择器）
+function editExclude() {
+  if (typeof prompt !== "function") return;
+  const cur = cleanExclude(state.exclude).join(", ");
+  const v = prompt(
+    "排除规则：CSS 选择器，多个用英文逗号分隔（留空 = 只用内置规则）\n" +
+      "内置已排除：" + BUILTIN_EXCLUDE.join(", "),
+    cur
+  );
+  if (v === null) return; // 取消
+  state.exclude = cleanExclude(String(v).split(","));
+  saveState();
+  scan();
+  refreshPanel();
+}
+
 // 当前列表的签名：key + 显隐状态 + 文案。顶栏频繁变动时只有签名真变了才重建列表，
 // 否则面板会每秒被整个重建一遍（视觉上就是「闪烁」）。
 let lastPanelSig = null;
@@ -952,6 +1048,7 @@ function listSignature() {
 function refreshPanel() {
   if (!panelEl) return;
   lastPanelSig = listSignature();
+  updateExcludeTag();
   const box = rowBox;
   const searchEl = panelEl.__search;
   const q = norm(searchEl && searchEl.value).toLowerCase();
@@ -1401,6 +1498,19 @@ window.TopBarIcons = {
     saveState();
     return storeMode;
   },
+  // 被排除、不参与管理的入口
+  excluded: function () {
+    return lastExcluded.slice();
+  },
+  // 读取/设置自定义排除规则（CSS 选择器数组，会随配置一起保存）
+  exclude: function (list) {
+    if (list === undefined) return excludeSelectors();
+    state.exclude = cleanExclude(list);
+    saveState();
+    scan();
+    if (panelEl && panelEl.style.display !== "none") refreshPanel();
+    return excludeSelectors();
+  },
   // 重新从插件目录拉取配置
   reload: function () {
     return loadRemote().then(function (ok) {
@@ -1433,6 +1543,8 @@ window.TopBarIcons = {
       root: root ? describeEl(root) : null,
       itemCount: items.length,
       hiddenCount: Object.keys(state.hidden).length,
+      excludeRules: excludeSelectors(),
+      excluded: lastExcluded.slice(0, 20),
       gear: g
         ? {
             connected: !!g.isConnected,
